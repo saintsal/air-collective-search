@@ -1,37 +1,3 @@
-<style>
-	h1, figure, p {
-		text-align: center;
-		margin: 0 auto;
-	}
-
-	h1 {
-		font-size: 2.8em;
-		text-transform: uppercase;
-		font-weight: 700;
-		margin: 0 0 0.5em 0;
-	}
-
-	figure {
-		margin: 0 0 1em 0;
-	}
-
-	img {
-		width: 100%;
-		max-width: 400px;
-		margin: 0 0 1em 0;
-	}
-
-	p {
-		margin: 1em auto;
-	}
-
-	@media (min-width: 480px) {
-		h1 {
-			font-size: 4em;
-		}
-	}
-</style>
-
 <script context="module">
   import mf from '../components/multifetch.js';
 
@@ -40,44 +6,82 @@
     if (!process.browser && process.env.NOW_REGION) {
 	baseUrl = `https://${host}`
     }
-
-    let urls = [
-      {v: 'latest', u: `${baseUrl}/posts/latest.json`}
-    ];
-
-    // let ret = await mf.call(this, urls);
-    return {...ret};
   }
 </script>
 
 <script>
-import { stores } from '@sapper/app';
+  import { stores } from '@sapper/app';
 
+const MESSAGE_CACHE_ENDPOINT = 'https://messagecache.pandemy.xyz/api/search'
+const POSTGREST_ENDPOINT = 'https://postgrest.pandemy.xyz/slack_messages'
 
 const { preloading } = stores();
-export let searchterm = "a";
+export let searchterm = "";
+export let status = "idle";
+export let results = [];
 
-async function search() {
-  const res = await fetch(`https://messagechache.pandemy.xyz/api/search?query=${searchterm}`);
-  const text = await res.text();
-
-console.log(res, text);
-  if (res.ok) {
-    return text;
-  } else {
-    throw new Error(text);
-  }
-    
+function timer(ms) {
+  return new Promise(res => setTimeout(res, ms));
 }
+
+async function get_results() {
+    console.log( "status: ", status)
+    if (status == "returning") {
+
+      let db_params = {
+	'select': `id, prev_text:message_body->"previous"->>"text",text:message_body->>"text"',
+	  'message_body->>"text"': like.*${searchterm}*`,
+	'limit': 10
+      }
+
+      const queryString = Object.entries(db_params).map(([key, value]) => {
+	return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+      }).join('&')
+
+      console.log(`${POSTGREST_ENDPOINT}?${queryString}`)
+      const res = await fetch(`${POSTGREST_ENDPOINT}?${queryString}`)
+      const text = await res.text();
+      status = 'idle'
+
+      if (res.status == 200 ) {
+	results = JSON.parse(text);
+	console.log(results)
+      } else {
+	throw new Error(text);
+      }
+
+      await timer(1000); // then the created Promise can be awaited
+      get_results();
+
+    }
+}
+
+async function start_search() {
+  status = 'searching'
+  const res = await fetch(`${MESSAGE_CACHE_ENDPOINT}?query=${searchterm}`);
+  const text = await res.text();
+  status = 'returning'
+  get_results();
+}
+
 </script>
 
 <svelte:head>
-	<title>Sapper project template</title>
+  <title>Sapper project template</title>
 </svelte:head>
 
-<form on:submit|preventDefault={search}>
-	<input name="search" bind:value="{searchterm}" />
-	<input type="submit" />
+<form on:submit|preventDefault={start_search}>
+  <input name="search" bind:value="{searchterm}" />
+  <input type="submit" />
+  {status}
 </form>
 
-{searchterm}
+count: {results.length}
+
+<ul>
+{#each results as result}
+ <li>
+  {result.text}
+ </li>
+{/each}
+</ul>
