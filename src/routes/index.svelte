@@ -24,19 +24,23 @@ function timer(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
 
+function encodeQueryData(parameters) {
+   const ret = [];
+   for (let parameter in parameters)
+     ret.push(encodeURIComponent(parameter) + '=' + encodeURIComponent(data[parameter]));
+   return ret.join('&');
+}
+
 async function get_results() {
     console.log( "status: ", status)
     if (status == "returning") {
 
       let db_params = {
-	'select': `id, prev_text:message_body->"previous"->>"text",text:message_body->>"text"',
-	  'message_body->>"text"': like.*${searchterm}*`,
-	'limit': 10
+        'select': `id, prev_text:message_body->"previous"->>"text",text:message_body->>"text"'`,
+        'message_body->>"text"': 'like.*' + searchterm + '*',
+        'limit': 10
       }
-
-      const queryString = Object.entries(db_params).map(([key, value]) => {
-	return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
-      }).join('&')
+      const queryString = encodeQueryData(db_params);
 
       console.log(`${POSTGREST_ENDPOINT}?${queryString}`)
       const res = await fetch(`${POSTGREST_ENDPOINT}?${queryString}`)
